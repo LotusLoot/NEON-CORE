@@ -284,14 +284,16 @@ const BOSSES = [
 ];
 
 /* ---------- 화면 크기 ---------- */
-let cssW = 1, cssH = 1, dpr = 1, scale = 1, W = 800, H = 600;
+let cssW = 1, cssH = 1, dpr = 1, scale = 1, W = 800, H = 600, fieldW = 1, fieldX = 0;
 function resize(){
   cssW = window.innerWidth; cssH = window.innerHeight;
   dpr = Math.min(window.devicePixelRatio || 1, 2);
   cv.width = Math.round(cssW * dpr); cv.height = Math.round(cssH * dpr);
-  scale = Math.sqrt(cssW * cssH / 500000);
-  W = cssW / scale; H = cssH / scale;
-  const pb = document.getElementById('pauseBtn'); if (pb) pb.style.top = Math.round(84 * scale) + 'px';
+  // 전장은 화면 전체를 쓴다. 가로로 넓은 화면에서는 세로가 짧아지지 않게, 가로:세로 = 4:5 화면과 같은 배율로 축소해서 그린다
+  fieldW = cssW; fieldX = 0;
+  scale = Math.sqrt(Math.min(cssW, cssH * 0.8) * cssH / 500000);
+  W = fieldW / scale; H = cssH / scale;
+  const pb = document.getElementById('pauseBtn'); if (pb){ pb.style.top = Math.round(84 * scale) + 'px'; pb.style.right = Math.round(fieldX + 12) + 'px'; }
 }
 window.addEventListener('resize', resize);
 resize();
@@ -881,14 +883,18 @@ const fmt = t => Math.floor(t / 60) + ':' + String(Math.floor(t % 60)).padStart(
 function draw(){
   ctx.setTransform(1,0,0,1,0,0);
   ctx.globalCompositeOperation = 'source-over';
-  ctx.fillStyle = '#07051a'; ctx.fillRect(0, 0, cv.width, cv.height);
+  // 메뉴에서는 화면 전체, 게임 중에는 가운데 전장만 쓴다
+  const inField = state !== 'menu' && fieldX > 0.5, fox = state === 'menu' ? 0 : fieldX, gw = state === 'menu' ? cssW / scale : W;
+  ctx.fillStyle = inField ? '#030110' : '#07051a'; ctx.fillRect(0, 0, cv.width, cv.height);
   const sh = reduceMotion || !opts.shake ? 0 : shake * 22;
-  ctx.setTransform(dpr*scale, 0, 0, dpr*scale, rand(-sh, sh) * dpr, rand(-sh, sh) * dpr);
+  ctx.setTransform(dpr*scale, 0, 0, dpr*scale, (fox + rand(-sh, sh)) * dpr, rand(-sh, sh) * dpr);
+  ctx.save();
+  if (inField){ ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.clip(); ctx.fillStyle = '#07051a'; ctx.fillRect(0, 0, W, H); }
 
   // 바닥 격자
   ctx.strokeStyle = '#1c1650'; ctx.lineWidth = 1; ctx.beginPath();
-  for (let x = (W/2) % 48; x < W; x += 48){ ctx.moveTo(x, 0); ctx.lineTo(x, H); }
-  for (let y = (H/2) % 48; y < H; y += 48){ ctx.moveTo(0, y); ctx.lineTo(W, y); }
+  for (let x = (gw/2) % 48; x < gw; x += 48){ ctx.moveTo(x, 0); ctx.lineTo(x, H); }
+  for (let y = (H/2) % 48; y < H; y += 48){ ctx.moveTo(0, y); ctx.lineTo(gw, y); }
   ctx.stroke();
 
   const b = boss, col = bossDef.colors[b.phase];
@@ -975,7 +981,7 @@ function draw(){
 
   // 위쪽 정보
   if (state === 'play' || state === 'end' || state === 'pause' || state === 'count'){
-    ctx.setTransform(dpr*scale, 0, 0, dpr*scale, 0, 0);
+    ctx.setTransform(dpr*scale, 0, 0, dpr*scale, fox * dpr, 0);
     const n = bossDef.phases.length, x0 = 16, bw = W - 32, gap = 6, sw = (bw - gap * (n - 1)) / n, by = 36, bh = 12;
     // 위쪽이 잘 보이도록 어두운 띠
     const tg = ctx.createLinearGradient(0, 0, 0, 96);
@@ -1047,6 +1053,13 @@ function draw(){
       ctx.shadowColor = col; ctx.shadowBlur = 20; ctx.fillStyle = '#fff';
       ctx.fillText(banner.text, W/2, H * 0.56); ctx.shadowBlur = 0; ctx.globalAlpha = 1;
     }
+  }
+
+  ctx.restore();
+  if (inField){                       // 전장 양옆 테두리
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.shadowColor = '#2ff3ff'; ctx.shadowBlur = 14; ctx.strokeStyle = '#2ff3ff88'; ctx.lineWidth = 2; ctx.beginPath();
+    ctx.moveTo(fieldX, 0); ctx.lineTo(fieldX, cssH); ctx.moveTo(fieldX + fieldW, 0); ctx.lineTo(fieldX + fieldW, cssH); ctx.stroke(); ctx.shadowBlur = 0;
   }
 
   // 터치 조작 표시
