@@ -119,6 +119,10 @@ input[type="text"]:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 10
 .grade b{color:#fffbe0;text-shadow:0 0 10px var(--yellow),0 0 22px #ffe94a88;font-family:var(--latin);font-size:26px}
 .row{display:flex;gap:8px}
 .row button{flex:1}
+[hidden]{display:none !important}
+.rk .st2{font-family:var(--display);font-size:15px;color:var(--dim)}
+.rk .st2.ok{color:#3dffb0;text-shadow:0 0 8px #3dffb099}
+button.room{align-items:center}
 </style>
 </head>
 <body>
@@ -135,6 +139,7 @@ input[type="text"]:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 10
       <p class="sub">탄막을 피하면서 보스를 부수세요. 공격은 자동으로 나가요.</p>
       <div class="col">
         <button class="big" id="goStage" type="button"><span>스테이지 선택</span><small id="stageNow"></small></button>
+        <button id="goDuel" type="button" style="--c:#3dffb0"><span>대결</span><small>친구와 1대1</small></button>
         <button id="goWeap" type="button" style="--c:#6fb6ff"><span>무기</span><small id="weapNow"></small></button>
         <button id="goSkin" type="button" style="--c:var(--magenta)"><span>스킨</span><small id="skinNow"></small></button>
         <button id="goRank" type="button" style="--c:#ff7a3d"><span>순위표</span><small id="rankNow"></small></button>
@@ -167,6 +172,23 @@ input[type="text"]:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 10
       <div class="col" id="rankList"></div>
       <p id="rankNote"></p>
     </div>
+    <div class="scr" id="scrDuel" hidden>
+      <div class="head"><button class="back" id="backDuel" type="button" aria-label="홈으로">‹</button><h2>대결</h2></div>
+      <button class="plain" id="mkRoom" type="button" style="--c:#3dffb0">방 만들기</button>
+      <div class="set"><span>방 코드</span><div class="seg"><input type="text" id="codeInput" inputmode="numeric" maxlength="4" placeholder="0000" aria-label="방 코드 4자리" style="width:90px"><button id="joinBtn" type="button">들어가기</button></div></div>
+      <div class="set"><span>열린 방</span><div class="seg"><button id="refreshRooms" type="button">새로 고침</button></div></div>
+      <div class="col" id="roomList"></div>
+      <p id="duelNote"></p>
+    </div>
+    <div class="scr" id="scrRoom" hidden>
+      <div class="head"><button class="back" id="backRoom" type="button" aria-label="방 나가기">‹</button><h2 id="roomTitle"></h2></div>
+      <div class="col" id="roomPlayers"></div>
+      <div class="seg" id="roomBoss"></div>
+      <div class="seg" id="roomDiff"></div>
+      <p class="sub" id="roomInfo"></p>
+      <button class="plain" id="roomAct" type="button" style="--c:#3dffb0"></button>
+      <p id="roomNote"></p>
+    </div>
     <div class="scr" id="scrSet" hidden>
       <div class="head"><button class="back" id="backSet" type="button" aria-label="홈으로">‹</button><h2>설정</h2></div>
       <div class="col" id="setList"></div>
@@ -181,7 +203,12 @@ input[type="text"]:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 10
     <p class="sub" id="resSub"></p>
     <div class="stats" id="resStats"></div>
     <p id="resRank"></p>
-    <div class="row">
+    <p class="sub" id="duelInfo" hidden></p>
+    <div class="row" id="duelRow" hidden>
+      <button class="plain" id="duelBackBtn" type="button" style="--c:#3dffb0">방으로 돌아가기</button>
+      <button class="plain" id="duelLeaveBtn" type="button" style="--c:#5b5490">나가기</button>
+    </div>
+    <div class="row" id="soloRow">
       <button class="plain" id="retryBtn" type="button">다시 하기</button>
       <button class="plain" id="menuBtn" type="button" style="--c:#5b5490">난이도 고르기</button>
     </div>
@@ -599,6 +626,7 @@ function hurt(){
   if (p.hearts <= 0) finish(false);
 }
 function finish(win){
+  if (duel.on){ duel.myT = Math.round(time * 100) / 100; pushMine({out:win ? 'win' : 'dead', t:duel.myT}); }
   won = win; state = 'end'; endT = win ? 1.6 : 1.0;
   if (win){
     for (const o of boss.bodies) for (let i = 0; i < 6; i++) spark(o.x + rand(-o.r,o.r), o.y + rand(-o.r,o.r), bossDef.colors[i % 3], 30, 560);
@@ -694,7 +722,7 @@ function updateBoss(dt){
 }
 
 function update(dt){
-  if (state === 'play'){ time += dt; updatePlayer(dt); }
+  if (state === 'play'){ time += dt; updatePlayer(dt); if (duel.on && (duel.sent -= dt) <= 0){ duel.sent = 0.5; pushMine(); } }
   updateBoss(dt);
   const p = player, b = boss;
   const alive = state === 'play';
@@ -846,7 +874,7 @@ function draw(){
 
   // 플레이어
   const p = player;
-  if (p && p.hearts > 0 && (state === 'play' || state === 'end' || state === 'pause')){
+  if (p && p.hearts > 0 && (state === 'play' || state === 'end' || state === 'pause' || state === 'count')){
     const blink = p.inv > 0 && p.dashT <= 0 && Math.floor(p.inv * 14) % 2 === 0;
     ctx.save(); ctx.translate(p.x, p.y);
     if (p.dashCd > 0){
@@ -868,7 +896,7 @@ function draw(){
   }
 
   // 위쪽 정보
-  if (state === 'play' || state === 'end' || state === 'pause'){
+  if (state === 'play' || state === 'end' || state === 'pause' || state === 'count'){
     ctx.setTransform(dpr*scale, 0, 0, dpr*scale, 0, 0);
     const n = bossDef.phases.length, x0 = 16, bw = W - 32, gap = 6, sw = (bw - gap * (n - 1)) / n, by = 36, bh = 12;
     // 위쪽이 잘 보이도록 어두운 띠
@@ -909,6 +937,7 @@ function draw(){
     ctx.fillStyle = '#e9e6ff'; ctx.fillText(score + '점', W - 16, 74);
     const swd = ctx.measureText(score + '점').width;
     ctx.fillStyle = '#8d86b8'; ctx.fillText(fmt(time), W - 16 - swd - 14, 74);
+    if (duel.on) drawOpp(x0);
     // 무기 칸 (컴퓨터): 왼쪽 아래, 숫자 키 1·2·3
     if (!touchMode && state !== 'end'){
       for (let i = 0; i < 3; i++) drawSlot(40 + i * 56, H - 44, 23, i, String(i + 1));
@@ -1157,20 +1186,22 @@ const FB_CFG = {
   projectId: "neon-core-eroc-noen",
   storageBucket: "neon-core-eroc-noen.firebasestorage.app",
   messagingSenderId: "761353735711",
-  appId: "1:761353735711:web:34f8ecdb2ae2757ce70f2a"
+  appId: "1:761353735711:web:34f8ecdb2ae2757ce70f2a",
+  databaseURL: "https://neon-core-eroc-noen-default-rtdb.asia-southeast1.firebasedatabase.app"
 };
 const FB_BASE = 'https://www.gstatic.com/firebasejs/10.12.2/';
-const net = {ready:false, failed:false, user:null, msg:'', U:null, F:null, auth:null, db:null};
+const net = {ready:false, failed:false, user:null, msg:'', U:null, F:null, R:null, auth:null, db:null, rt:null};
 const OFFLINE_MSG = '온라인 기능을 불러오지 못했어요. 이 미리보기에서는 바깥 접속이 막혀 있어요. 깃허브 페이지에 올리면 켜져요.';
 const fmt2 = t => Math.floor(t / 60) + ':' + (t % 60 < 10 ? '0' : '') + (t % 60).toFixed(2);
 const boardId = (bd, d) => bd.id + '_' + d.id;
 function myName(){ return (opts.name || '').trim().slice(0, 10) || '익명' + (net.user ? net.user.uid.slice(0, 4) : ''); }
-function refreshNet(){ if (state !== 'menu') return; if (scr === 'Set') buildSet(); else if (scr === 'Rank') buildRank(); }
+function refreshNet(){ if (state !== 'menu') return; if (scr === 'Set') buildSet(); else if (scr === 'Rank') buildRank(); else if (scr === 'Duel') buildDuel(); }
 async function initNet(){
   try {
-    const [A, U, F] = await Promise.all([import(FB_BASE + 'firebase-app.js'), import(FB_BASE + 'firebase-auth.js'), import(FB_BASE + 'firebase-firestore.js')]);
+    const [A, U, F, R] = await Promise.all([import(FB_BASE + 'firebase-app.js'), import(FB_BASE + 'firebase-auth.js'), import(FB_BASE + 'firebase-firestore.js'), import(FB_BASE + 'firebase-database.js')]);
     const app = A.initializeApp(FB_CFG);
-    net.U = U; net.F = F; net.auth = U.getAuth(app); net.db = F.getFirestore(app);
+    net.U = U; net.F = F; net.R = R; net.auth = U.getAuth(app); net.db = F.getFirestore(app); net.rt = R.getDatabase(app, FB_CFG.databaseURL);
+    R.onValue(R.ref(net.rt, '.info/serverTimeOffset'), sn => { duel.offset = sn.val() || 0; });
     U.onAuthStateChanged(net.auth, async u => {
       net.user = u; net.ready = !!u;
       if (!u){
@@ -1284,11 +1315,240 @@ function buildAcct(box){
   box.appendChild(a);
 }
 
+/* ---------- 실시간 대결 (Realtime Database) ----------
+   rooms/{4자리 코드} = {host, boss, diff, state: lobby|count|play, open, startAt, players/{uid}: {name, lo, ready, hp, hearts, out, t}}
+   각자 자기 화면에서 같은 보스와 싸우고, 0.5초마다 자기 진행 상황만 올린다. 먼저 깬 사람이 이긴다. */
+const duel = {on:false, code:null, host:false, room:null, unsub:null, phase:'', verdict:null, reason:'', msg:'', offset:0, startAt:0, sent:0, myT:0, myHp:1};
+const serverNow = () => Date.now() + duel.offset;
+const roomRef = () => net.R.ref(net.rt, 'rooms/' + duel.code);
+const meRef = () => net.R.ref(net.rt, 'rooms/' + duel.code + '/players/' + net.user.uid);
+const quiet = pr => { try { Promise.resolve(pr).catch(() => {}); } catch (e) {} };
+function meNode(){ return {name:myName(), lo:getLO().map(w => w.id), ready:false, hp:1, hearts:0}; }
+function oppOf(){
+  const r = duel.room;
+  if (!r || !r.players || !net.user) return null;
+  const k = Object.keys(r.players).find(x => x !== net.user.uid);
+  return k ? r.players[k] : null;
+}
+function bossLeft(){
+  const ph = bossDef.phases, total = ph.reduce((a, x) => a + x.hp, 0);
+  return Math.max(0, Math.round((boss.hp + ph.slice(boss.phase + 1).reduce((a, x) => a + x.hp, 0)) / total * 1000) / 1000);
+}
+function pushMine(extra){
+  if (!duel.on || !net.ready) return;
+  duel.myHp = bossLeft();
+  quiet(net.R.update(meRef(), Object.assign({hp:duel.myHp, hearts:player.hearts}, extra || {})));
+}
+async function createRoom(){
+  if (!net.ready) return;
+  const R = net.R, uid = net.user.uid;
+  duel.msg = '';
+  try {
+    for (let i = 0; i < 6; i++){
+      const code = String(Math.floor(Math.random() * 10000)).padStart(4, '0'), r = R.ref(net.rt, 'rooms/' + code);
+      if ((await R.get(r)).exists()) continue;
+      await R.set(r, {host:uid, boss:BOSSES[selBoss].id, diff:'normal', state:'lobby', open:true, created:R.serverTimestamp(), players:{[uid]:meNode()}});
+      quiet(R.onDisconnect(r).remove());
+      enterRoom(code, true); return;
+    }
+    duel.msg = '방을 만들지 못했어요. 다시 눌러 주세요.';
+  } catch (e) { duel.msg = '방을 만들지 못했어요 (' + (e.code || e.message) + ').'; }
+  buildDuel();
+}
+async function joinRoom(code){
+  if (!net.ready) return;
+  const R = net.R, uid = net.user.uid;
+  if (!/^\d{4}$/.test(code)){ duel.msg = '방 코드는 숫자 4자리예요.'; buildDuel(); return; }
+  try {
+    const v = (await R.get(R.ref(net.rt, 'rooms/' + code))).val();
+    if (!v) duel.msg = code + ' 방을 찾지 못했어요.';
+    else if (v.state !== 'lobby') duel.msg = '이미 대결이 시작된 방이에요.';
+    else if (Object.keys(v.players || {}).filter(k => k !== uid).length >= 2) duel.msg = '방이 꽉 찼어요.';
+    else {
+      const me = R.ref(net.rt, 'rooms/' + code + '/players/' + uid);
+      await R.set(me, meNode());
+      quiet(R.onDisconnect(me).remove());
+      enterRoom(code, false); return;
+    }
+  } catch (e) { duel.msg = '방에 들어가지 못했어요 (' + (e.code || e.message) + ').'; }
+  buildDuel();
+}
+function enterRoom(code, host){
+  Object.assign(duel, {on:true, code, host, room:null, phase:'lobby', verdict:null, reason:'', msg:''});
+  duel.unsub = net.R.onValue(roomRef(), sn => { duel.room = sn.val(); onRoom(); });
+  show('Room');
+}
+// 방이 이미 사라졌을 때: 내 쪽 정리만 한다
+function dropRoom(msg){
+  if (duel.unsub){ duel.unsub(); duel.unsub = null; }
+  if (duel.code && net.ready) quiet(net.R.onDisconnect(duel.host ? roomRef() : meRef()).cancel());
+  Object.assign(duel, {on:false, code:null, room:null, phase:'', verdict:null, msg:msg || ''});
+}
+function leaveRoom(){
+  if (duel.on && duel.code && net.ready) quiet(net.R.remove(duel.host ? roomRef() : meRef()));
+  dropRoom('');
+}
+function onRoom(){
+  const room = duel.room;
+  if (!duel.on) return;
+  if (!room){
+    if (duel.phase === 'lobby'){ dropRoom('방이 닫혔어요.'); if (state === 'menu') show('Duel'); }
+    else evalDuel();
+    return;
+  }
+  if (duel.host){
+    const open = room.state === 'lobby' && Object.keys(room.players || {}).length < 2;
+    if (room.open !== open) quiet(net.R.update(roomRef(), {open}));
+  }
+  if (room.state === 'count' && duel.phase === 'lobby') beginCount();
+  if (state === 'menu' && scr === 'Room') buildRoom();
+  evalDuel();
+}
+function beginCount(){
+  const room = duel.room, d = DIFFS.find(x => x.id === room.diff) || DIFFS[1];
+  Object.assign(duel, {phase:'count', verdict:null, reason:'', sent:0, myHp:1, myT:0});
+  selBoss = Math.max(0, BOSSES.findIndex(b => b.id === room.boss));
+  $('menu').hidden = true; $('result').hidden = true;
+  start(d); state = 'count';
+  duel.startAt = +room.startAt || serverNow() + 3500;
+  if (duel.startAt - serverNow() > 8000) duel.startAt = serverNow() + 3500;
+  quiet(net.R.update(meRef(), {ready:false, out:null, t:null, hp:1, hearts:d.hearts}));
+}
+function tickCount(){
+  const left = (duel.startAt - serverNow()) / 1000;
+  banner = {text:left > 0 ? String(Math.ceil(left)) : '시작!', t:0.9};
+  if (left <= 0){
+    state = 'play'; duel.phase = 'play';
+    if (duel.host) quiet(net.R.update(roomRef(), {state:'play'}));
+  }
+}
+function forceEnd(){ if (state === 'play' || state === 'count'){ state = 'end'; endT = 0.4; won = false; } }
+// 승패 판정: 한 번 정해지면 바뀌지 않는다
+function evalDuel(){
+  if (!duel.on || (duel.phase !== 'play' && duel.phase !== 'result')) return;
+  if (!duel.verdict){
+    const o = oppOf(), playing = state === 'play', myOut = playing ? null : won ? 'win' : 'dead';
+    if (!duel.room || !o){ duel.verdict = 'win'; duel.reason = '상대가 나가서 이겼어요.'; if (playing) forceEnd(); }
+    else if (myOut === 'win'){
+      if (o.out === 'win' && o.t < duel.myT){ duel.verdict = 'lose'; duel.reason = '상대가 조금 더 빨리 깼어요.'; }
+      else { duel.verdict = 'win'; duel.reason = '보스를 먼저 깼어요.'; }
+    }
+    else if (o.out === 'win'){ duel.verdict = 'lose'; duel.reason = '상대가 보스를 먼저 깼어요.'; if (playing) forceEnd(); }
+    else if (myOut === 'dead' && o.out === 'dead'){
+      const oh = +o.hp;
+      if (duel.myHp < oh){ duel.verdict = 'win'; duel.reason = '둘 다 쓰러졌지만 보스 체력을 더 많이 깎았어요.'; }
+      else if (duel.myHp > oh){ duel.verdict = 'lose'; duel.reason = '둘 다 쓰러졌고, 상대가 보스 체력을 더 많이 깎았어요.'; }
+      else { duel.verdict = 'draw'; duel.reason = '둘 다 쓰러졌고 깎은 체력도 같아요.'; }
+    }
+    else duel.reason = myOut === 'dead' ? '상대가 끝날 때까지 기다리는 중이에요.' : '';
+  }
+  renderDuel();
+}
+function renderDuel(){
+  if (duel.phase !== 'result') return;
+  const v = duel.verdict, o = oppOf(), t = $('resTitle');
+  t.textContent = v === 'win' ? '승리!' : v === 'lose' ? '패배' : v === 'draw' ? '무승부' : '쓰러졌어요';
+  t.className = v === 'win' ? 'win' : 'lose';
+  $('resSub').textContent = duel.reason;
+  const pct = o ? Math.ceil((+o.hp || 0) * 100) : 0;
+  $('duelInfo').textContent = !o ? '상대가 방에 없어요.'
+    : String(o.name || '상대').slice(0, 10) + ' · ' + (o.out === 'win' ? fmt2(+o.t || 0) + '에 클리어'
+      : o.out === 'dead' ? '쓰러짐, 보스 체력 ' + pct + '% 남김'
+      : '싸우는 중, 보스 체력 ' + pct + '% 남음, 하트 ' + (o.hearts || 0) + '개');
+}
+function clearField(){ state = 'menu'; boss = newBoss(); bullets = []; lasers = []; shots = []; parts = []; fx = []; }
+function backToRoom(){
+  $('result').hidden = true; clearField(); $('menu').hidden = false;
+  if (!duel.room){ dropRoom('방이 닫혔어요.'); show('Duel'); return; }
+  duel.phase = 'lobby'; duel.verdict = null;
+  quiet(net.R.update(meRef(), {ready:false, out:null, t:null, hp:1}));
+  if (duel.host) quiet(net.R.update(roomRef(), {state:'lobby'}));
+  show('Room');
+}
+function drawOpp(x0){
+  const o = oppOf(), y = 100;
+  ctx.font = '15px "Do Hyeon", sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  const label = 'VS ' + (o ? String(o.name || '상대').slice(0, 10) : '(나감)');
+  ctx.fillStyle = '#ff7a3d'; ctx.fillText(label, x0, y);
+  if (!o) return;
+  const bx = x0 + ctx.measureText(label).width + 10, bw = Math.max(40, Math.min(150, W - bx - 80));
+  ctx.fillStyle = '#1c1650'; rr(bx, y - 10, bw, 8, 4); ctx.fill();
+  const f = clamp(+o.hp || 0, 0, 1);
+  if (f > 0){ ctx.fillStyle = '#ff7a3d'; rr(bx, y - 10, Math.max(bw * f, 6), 8, 4); ctx.fill(); }
+  ctx.fillStyle = '#f1efff'; ctx.fillText(o.out === 'win' ? '클리어' : o.out === 'dead' ? '쓰러짐' : '♥' + (o.hearts || 0), bx + bw + 8, y);
+}
+// 대결 화면: 방 만들기, 코드로 들어가기, 열린 방 목록
+let roomsTok = 0;
+function buildDuel(){
+  const list = $('roomList'), note = $('duelNote'), ok = net.ready;
+  list.innerHTML = '';
+  $('mkRoom').disabled = !ok; $('joinBtn').disabled = !ok; $('refreshRooms').disabled = !ok;
+  if (net.failed){ note.textContent = OFFLINE_MSG; return; }
+  if (!ok){ note.textContent = net.msg || '연결하는 중이에요…'; return; }
+  note.textContent = duel.msg || '열린 방을 찾는 중이에요…';
+  const R = net.R, tok = ++roomsTok;
+  R.get(R.query(R.ref(net.rt, 'rooms'), R.orderByChild('open'), R.equalTo(true), R.limitToFirst(20))).then(sn => {
+    if (tok !== roomsTok || scr !== 'Duel') return;
+    const all = sn.val() || {}, now = serverNow();
+    let n = 0;
+    for (const code of Object.keys(all)){
+      const r = all[code];
+      if (!r || !r.players || now - (+r.created || 0) > 3 * 3600 * 1000) continue;
+      const host = r.players[r.host] || {}, bd = BOSSES.find(b => b.id === r.boss) || BOSSES[0], d = DIFFS.find(x => x.id === r.diff) || DIFFS[1];
+      const bt = mk('button', 'room'); bt.type = 'button'; bt.style.setProperty('--c', '#3dffb0');
+      bt.appendChild(mk('span', '', String(host.name || '방').slice(0, 10)));
+      bt.appendChild(mk('small', '', code + ' · ' + bd.name + ' · ' + d.name));
+      bt.addEventListener('click', () => joinRoom(code));
+      list.appendChild(bt); n++;
+    }
+    if (!duel.msg) note.textContent = n ? '방을 누르면 들어가요.' : '지금 열린 방이 없어요. 방을 만들고 친구에게 코드를 알려 주세요.';
+  }).catch(e => { if (tok === roomsTok) note.textContent = '방 목록을 불러오지 못했어요 (' + (e.code || e.message) + ').'; });
+}
+// 방 화면: 참가자, 보스·난이도(방장), 준비·시작
+function buildRoom(){
+  const room = duel.room, pl = $('roomPlayers'), act = $('roomAct');
+  $('roomTitle').textContent = '방 ' + (duel.code || '');
+  pl.innerHTML = ''; $('roomBoss').innerHTML = ''; $('roomDiff').innerHTML = '';
+  if (!room){ $('roomInfo').textContent = ''; act.hidden = true; $('roomNote').textContent = '방에 들어가는 중이에요…'; return; }
+  const uid = net.user.uid, ids = Object.keys(room.players || {}), others = ids.filter(k => k !== room.host);
+  for (const k of [room.host].concat(others)){
+    const p = room.players[k];
+    if (!p) continue;
+    const row = mk('div', 'rk' + (k === uid ? ' me' : ''));
+    row.appendChild(mk('span', 'no', k === room.host ? '방장' : ''));
+    const nm = mk('span', 'nm'); nm.appendChild(mk('b', '', String(p.name || '익명').slice(0, 10)));
+    nm.appendChild(mk('small', '', (Array.isArray(p.lo) ? p.lo : []).map(id => (WEAPONS.find(w => w.id === id) || {}).name).filter(Boolean).join(' · ')));
+    row.appendChild(nm);
+    row.appendChild(mk('span', 'st2' + (k === room.host || p.ready ? ' ok' : ''), k === room.host ? '' : p.ready ? '준비 완료' : '준비 중'));
+    pl.appendChild(row);
+  }
+  const bi = Math.max(0, BOSSES.findIndex(b => b.id === room.boss)), di = Math.max(0, DIFFS.findIndex(d => d.id === room.diff));
+  const lobby = room.state === 'lobby', guest = others.length ? room.players[others[0]] : null;
+  if (duel.host && lobby){
+    const tabs = (box, names, cur, on) => names.forEach((nm, i) => {
+      const b = mk('button', '', nm); b.type = 'button'; b.setAttribute('aria-pressed', i === cur ? 'true' : 'false');
+      b.addEventListener('click', () => on(i)); box.appendChild(b);
+    });
+    tabs($('roomBoss'), BOSSES.map(b => b.name), bi, i => quiet(net.R.update(roomRef(), {boss:BOSSES[i].id})));
+    tabs($('roomDiff'), DIFFS.map(d => d.name), di, i => quiet(net.R.update(roomRef(), {diff:DIFFS[i].id})));
+    $('roomInfo').textContent = '';
+  } else $('roomInfo').textContent = '보스 ' + BOSSES[bi].name + ' · 난이도 ' + DIFFS[di].name;
+  act.hidden = !lobby;
+  if (duel.host){
+    act.textContent = '시작'; act.disabled = !(guest && guest.ready);
+    $('roomNote').textContent = !lobby ? '대결이 진행 중이에요.' : !guest ? '친구에게 방 코드 ' + duel.code + '를 알려 주세요.' : guest.ready ? '시작을 누르면 3초 뒤에 동시에 시작해요.' : '상대가 준비하면 시작할 수 있어요.';
+  } else {
+    const me = room.players[uid] || {};
+    act.textContent = me.ready ? '준비 취소' : '준비'; act.disabled = false;
+    $('roomNote').textContent = !lobby ? '방장이 방으로 돌아오기를 기다리는 중이에요.' : me.ready ? '방장이 시작하기를 기다리는 중이에요.' : '준비를 누르면 방장이 시작할 수 있어요.';
+  }
+}
+
 let scr = 'Home';
 function show(name){
   scr = name;
-  for (const n of ['Home','Stage','Diff','Weap','Skin','Rank','Set']) $('scr' + n).hidden = n !== name;
-  ({Home:buildHome, Stage:buildStages, Diff:buildDiffs, Weap:buildWeap, Skin:buildSkins, Rank:buildRank, Set:buildSet})[name]();
+  for (const n of ['Home','Stage','Diff','Weap','Skin','Rank','Duel','Room','Set']) $('scr' + n).hidden = n !== name;
+  ({Home:buildHome, Stage:buildStages, Diff:buildDiffs, Weap:buildWeap, Skin:buildSkins, Rank:buildRank, Duel:buildDuel, Room:buildRoom, Set:buildSet})[name]();
 }
 function buildHome(){
   $('stageNow').textContent = '보스 ' + BOSSES.length + '종';
@@ -1373,7 +1633,6 @@ function buildSkins(){
     box.appendChild(bt);
   }
 }
-let resetArmed = false;
 function buildSet(){
   const box = $('setList');
   box.innerHTML = '';
@@ -1390,24 +1649,29 @@ function buildSet(){
   seg('소리', ['켜짐', '꺼짐'], opts.sound ? 0 : 1, i => { opts.sound = i === 0; soundOn = opts.sound; });
   seg('화면 흔들림', ['켜짐', '꺼짐'], opts.shake ? 0 : 1, i => { opts.shake = i === 0; });
   seg('적 탄 밝기', ['어둡게', '보통', '밝게'], opts.bright, i => { opts.bright = i; });
-  const rs = mk('button', 'ghost', resetArmed ? '한 번 더 누르면 기록이 모두 지워져요' : '기록 지우기'); rs.type = 'button';
-  rs.addEventListener('click', () => {
-    if (!resetArmed){ resetArmed = true; buildSet(); return; }
-    resetArmed = false; saveBest({});
-    if (curSkin().need){ opts.skin = 'arrow'; saveOpts(); }
-    selBoss = 0; bossDef = BOSSES[0]; boss = newBoss(); buildSet();
-  });
-  box.appendChild(rs);
-  box.appendChild(mk('p', '', '이 기기의 기록만 지워져요. 열어 둔 스테이지와 스킨도 다시 잠기고, 순위표에 올린 기록은 남아요.'));
   buildAcct(box);
 }
 $('goStage').addEventListener('click', () => show('Stage'));
 $('goSkin').addEventListener('click', () => show('Skin'));
 $('goWeap').addEventListener('click', () => { weapMsg = ''; show('Weap'); });
 $('backWeap').addEventListener('click', () => show('Home'));
-$('goSet').addEventListener('click', () => { resetArmed = false; net.msg = ''; show('Set'); });
+$('goSet').addEventListener('click', () => { net.msg = ''; show('Set'); });
 $('goRank').addEventListener('click', () => { rankBoss = selBoss; show('Rank'); });
 $('backRank').addEventListener('click', () => show('Home'));
+$('goDuel').addEventListener('click', () => { duel.msg = ''; show('Duel'); });
+$('backDuel').addEventListener('click', () => show('Home'));
+$('mkRoom').addEventListener('click', createRoom);
+$('joinBtn').addEventListener('click', () => joinRoom(String($('codeInput').value || '').trim()));
+$('refreshRooms').addEventListener('click', () => { duel.msg = ''; buildDuel(); });
+$('backRoom').addEventListener('click', () => { leaveRoom(); show('Duel'); });
+$('roomAct').addEventListener('click', () => {
+  const room = duel.room;
+  if (!room || room.state !== 'lobby') return;
+  if (duel.host) quiet(net.R.update(roomRef(), {state:'count', startAt:serverNow() + 3500, open:false}));
+  else quiet(net.R.update(meRef(), {ready:!(room.players[net.user.uid] || {}).ready}));
+});
+$('duelBackBtn').addEventListener('click', backToRoom);
+$('duelLeaveBtn').addEventListener('click', () => { leaveRoom(); $('result').hidden = true; clearField(); show('Duel'); $('menu').hidden = false; });
 $('backStage').addEventListener('click', () => show('Home'));
 $('backDiff').addEventListener('click', () => show('Stage'));
 $('backSkin').addEventListener('click', () => show('Home'));
@@ -1447,7 +1711,9 @@ function showResult(){
     } else if (!net.failed) rk.textContent = net.msg || '온라인에 연결되지 않아 순위표에는 올리지 않았어요.';
   }
   $('resStats').innerHTML = stats.map(s => '<div class="stat ' + (s[2] || '') + '"><b>' + s[1] + '</b><span>' + s[0] + '</span></div>').join('');
+  $('duelInfo').hidden = !duel.on; $('duelRow').hidden = !duel.on; $('soloRow').hidden = duel.on;
   $('result').hidden = false;
+  if (duel.on){ duel.phase = 'result'; evalDuel(); }
 }
 $('retryBtn').addEventListener('click', () => { $('result').hidden = true; start(D); });
 function goMenu(){
@@ -1455,7 +1721,7 @@ function goMenu(){
   show('Diff'); $('menu').hidden = false;
 }
 $('menuBtn').addEventListener('click', goMenu);
-function pause(){ if (state !== 'play') return; state = 'pause'; keys.clear(); moveStick = null; $('pause').hidden = false; }
+function pause(){ if (state !== 'play' || duel.on) return; state = 'pause'; keys.clear(); moveStick = null; $('pause').hidden = false; }
 function resume(){ if (state !== 'pause') return; state = 'play'; $('pause').hidden = true; }
 $('pauseBtn').addEventListener('click', pause);
 $('resumeBtn').addEventListener('click', resume);
@@ -1467,7 +1733,8 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) pause
 let last = performance.now();
 function frame(ts){
   const dt = Math.min((ts - last) / 1000, 0.033); last = ts;
-  const hidePause = state !== 'play';
+  const hidePause = state !== 'play' || duel.on;
+  if (state === 'count') tickCount();
   if ($('pauseBtn').hidden !== hidePause) $('pauseBtn').hidden = hidePause;
   if (state === 'play' || state === 'end') update(dt);
   else if (state !== 'pause') { boss.t += dt; boss.rot += dt * 0.6; boss.intro -= dt; if (state === 'menu' && bossDef.kind === 'twin') moveTwin(boss, dt); for (const q of parts){ q.life -= dt; } parts = parts.filter(q => q.life > 0); }
