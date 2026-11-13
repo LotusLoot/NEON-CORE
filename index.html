@@ -274,12 +274,12 @@ const BOSSES = [
      {hp:405, attacks:[['slam'],['rope','fan'],['cross','fan']]},
    ]},
   // 거대한 태양: 화면 위쪽을 채우고 움직이지 않는다. 코로나 폭발(멀리 피하기)과 태양풍(가까이 붙기)이 번갈아 나온다
-  {id:'solar', kind:'sun', name:'솔라 크라운', r:260,
+  {id:'solar', kind:'sun', name:'솔라 크라운', r:260, rest:0.45,
    colors:['#ffe94a','#ff9a3d','#fff3c4'],
    phases:[
-     {hp:300, attacks:[['rays'],['corona'],['rays']]},
-     {hp:360, attacks:[['beams'],['wind'],['rays','corona']]},
-     {hp:420, attacks:[['prom'],['flip'],['beams','rays']]},
+     {hp:380, attacks:[['rays'],['corona','rays'],['prom']]},
+     {hp:450, attacks:[['beams','rays'],['wind','prom'],['flip']]},
+     {hp:530, attacks:[['flip','prom'],['beams','prom'],['wind','rays'],['corona','rays']]},
    ]},
 ];
 
@@ -452,8 +452,8 @@ const ATTACKS = {
 // 태양은 화면 위쪽 가운데에 반쯤 걸쳐 있다. 화면 크기에 맞춰 반지름을 정한다
 function sunGeo(b){ b.r = Math.min(W * 0.55, H * 0.42); b.x = W / 2; b.y = -b.r * 0.25; }
 // 코로나 폭발이 닿는 반지름(이 안이 위험), 태양풍에서 안전한 반지름(이 밖이 위험)
-const coronaR = b => H * 0.68 - b.y;
-const windR = b => b.r + 170;
+const coronaR = b => Math.max(H * 0.68 - b.y, Math.hypot(W / 2, H * 0.5 - b.y));
+const windR = b => b.r + 135;
 // 태양 표면에서 플레이어 쪽을 향한 점 (화면에 보이는 아래쪽 호 안으로 제한)
 function sunSurf(b, ang){ const a = clamp(ang, 0.35, Math.PI - 0.35); return {x:b.x + Math.cos(a) * b.r, y:b.y + Math.sin(a) * b.r, a}; }
 function moveSun(b, dt){
@@ -462,6 +462,10 @@ function moveSun(b, dt){
     const z = b[k];
     if (!z) continue;
     z.t += dt;
+    if (z.t > z.warn && !z.snd && k === 'corona' && state === 'play'){
+      const n = Math.round(22 * D.count), cr = coronaR(b), off = Math.random();
+      for (let i = 0; i < n; i++){ const a = (i + off) / n * Math.PI; shoot(b.x + Math.cos(a) * cr, b.y + Math.sin(a) * cr, a, 150, SPR.mag, 7); }
+    }
     if (z.t > z.warn && !z.snd){ z.snd = true; shake = Math.max(shake, k === 'beams' ? 0.1 : 0.3); beep(k === 'wind' ? 180 : 110, 0.5, 'sawtooth', 0.08, k === 'wind' ? 700 : 40); }
     if (z.t > z.warn + z.fire) b[k] = null;
   }
@@ -482,30 +486,32 @@ function sunHazards(p, b){
 }
 Object.assign(ATTACKS, {
   rays: {dur:3.4, run(b, t, st){        // 햇살 부채꼴
-    every(st, 'k', 0.55, t, 6, i => {
-      const s0 = sunSurf(b, Math.atan2(player.y - b.y, player.x - b.x)), n = D.count > 1 ? 10 : 7;
-      const a = Math.atan2(player.y - s0.y, player.x - s0.x);
-      for (let k = 0; k < n; k++) shoot(s0.x, s0.y, a + (k / (n - 1) - 0.5) * 1.2, 190, i % 2 ? SPR.org : SPR.yel, 7);
+    every(st, 'k', 0.45, t, 7, i => {
+      const pa = Math.atan2(player.y - b.y, player.x - b.x), n = D.count > 1 ? 11 : 8;
+      for (const off of (i % 2 ? [-0.55, 0.55] : [0])){
+        const s0 = sunSurf(b, pa + off), a = Math.atan2(player.y - s0.y, player.x - s0.x);
+        for (let k = 0; k < n; k++) shoot(s0.x, s0.y, a + (k / (n - 1) - 0.5) * 1.15, 225, i % 2 ? SPR.org : SPR.yel, 7);
+      }
       beep(260, 0.1, 'triangle', 0.04);
     });
   }},
   corona: {dur:2.3, run(b, t, st){      // 코로나 폭발: 멀리 떨어져야 안전
-    every(st, 'k', 99, t, 1, () => { b.corona = {t:0, warn:b.phase > 1 ? 1.1 : 1.4, fire:0.5}; });
+    every(st, 'k', 99, t, 1, () => { b.corona = {t:0, warn:b.phase > 1 ? 0.95 : 1.15, fire:0.5}; });
   }},
   wind: {dur:3.1, run(b, t, st){        // 태양풍: 가까이 붙어야 안전
-    every(st, 'k', 99, t, 1, () => { b.wind = {t:0, warn:b.phase > 1 ? 1.8 : 2.2, fire:0.6}; });
+    every(st, 'k', 99, t, 1, () => { b.wind = {t:0, warn:b.phase > 1 ? 1.6 : 1.9, fire:0.6}; });
   }},
   flip: {dur:5, run(b, t, st){          // 코로나 폭발 뒤에 바로 태양풍
-    every(st, 'c', 99, t, 1, () => { b.corona = {t:0, warn:1.1, fire:0.5}; });
-    if (t >= 1.9) every(st, 'w', 99, t, 1, () => { b.wind = {t:0, warn:1.9, fire:0.6}; });
+    every(st, 'c', 99, t, 1, () => { b.corona = {t:0, warn:0.95, fire:0.5}; });
+    if (t >= 1.7) every(st, 'w', 99, t, 1, () => { b.wind = {t:0, warn:1.6, fire:0.6}; });
   }},
   beams: {dur:5, run(b, t, st){         // 회전하는 광선: 틈을 따라 같이 돈다
-    every(st, 'k', 99, t, 1, () => { b.beams = {t:0, warn:1.1, fire:3.6, base:st.seed, dir:st.seed > Math.PI ? 1 : -1, w:0.28, n:6}; });
+    every(st, 'k', 99, t, 1, () => { b.beams = {t:0, warn:1.1, fire:3.6, base:st.seed, dir:st.seed > Math.PI ? 1 : -1, w:0.33, n:7}; });
   }},
   prom: {dur:3.3, run(b, t, st){        // 홍염: 포물선으로 떨어지는 큰 불덩이
-    every(st, 'k', 0.3 / D.count, t, Math.floor(3 * D.count / 0.3), () => {
-      const s0 = sunSurf(b, rand(0.4, Math.PI - 0.4));
-      if (bullets.length < 900) bullets.push({x:s0.x, y:s0.y, vx:rand(-170, 170) * D.speed, vy:rand(-70, 30) * D.speed, g:230 * D.speed, r:12, spr:SPR.org, grazed:false});
+    every(st, 'k', 0.2 / D.count, t, Math.floor(3 * D.count / 0.2), () => {
+      const s0 = sunSurf(b, rand(0.4, Math.PI - 0.4)), wide = Math.max(190, W * 0.3);
+      if (bullets.length < 900) bullets.push({x:s0.x, y:s0.y, vx:rand(-wide, wide) * D.speed, vy:rand(-70, 60) * D.speed, g:260 * D.speed, r:12, spr:SPR.org, grazed:false});
     });
   }},
 });
@@ -795,7 +801,7 @@ function updateBoss(dt){
   } else {
     b.atk.t += dt;
     b.atk.names.forEach((n, i) => ATTACKS[n].run(b, b.atk.t, b.atk.st[i]));
-    if (b.atk.t >= b.atk.dur && !b.charge){ b.atk = null; b.rest = 0.9; }
+    if (b.atk.t >= b.atk.dur && !b.charge){ b.atk = null; b.rest = bossDef.rest || 0.9; }
   }
 }
 
