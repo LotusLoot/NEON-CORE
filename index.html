@@ -96,6 +96,12 @@ button.skin small{text-align:center;font-size:11px;line-height:1.3}
 input[type="text"]{font-family:var(--body);font-size:16px;color:var(--ink);background:#120d36;border:1.5px solid #5b5490;border-radius:9px;
   padding:8px 10px;width:150px;-webkit-user-select:text;user-select:text}
 input[type="text"]:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 10px #2ff3ff66}
+.log{background:#120d36;border:1px solid #2ff3ff22;border-radius:10px;padding:11px 13px;display:flex;flex-direction:column;gap:6px}
+.log.new{border-color:var(--cyan);box-shadow:0 0 10px #2ff3ff44}
+.log h3{margin:0;font-family:var(--display);font-weight:400;font-size:19px;display:flex;justify-content:space-between;gap:10px;align-items:baseline}
+.log h3 em{font-style:normal;font-family:var(--latin);font-size:12px;color:var(--cyan);letter-spacing:.1em}
+.log h3 small{font-family:var(--body);font-size:12px;color:var(--dim)}
+.log ul{margin:0;padding-left:18px;color:var(--dim);font-size:13.5px;line-height:1.55}
 .acct{display:flex;flex-direction:column;gap:9px;padding-top:12px;border-top:1px solid #5b549066}
 .rk{display:grid;grid-template-columns:30px 1fr auto;gap:8px;align-items:center;padding:8px 10px;border-radius:9px;background:#120d36;border:1px solid #2ff3ff22}
 .rk.me{border-color:var(--cyan);box-shadow:0 0 10px #2ff3ff55}
@@ -146,6 +152,7 @@ button.room{align-items:center}
         <button id="goSet" type="button" style="--c:var(--yellow)"><span>설정</span></button>
       </div>
       <p id="help"></p>
+      <button class="ghost" id="goLog" type="button"></button>
     </div>
     <div class="scr" id="scrStage" hidden>
       <div class="head"><button class="back" id="backStage" type="button" aria-label="홈으로">‹</button><h2>스테이지 선택</h2></div>
@@ -188,6 +195,10 @@ button.room{align-items:center}
       <p class="sub" id="roomInfo"></p>
       <button class="plain" id="roomAct" type="button" style="--c:#3dffb0"></button>
       <p id="roomNote"></p>
+    </div>
+    <div class="scr" id="scrLog" hidden>
+      <div class="head"><button class="back" id="backLog" type="button" aria-label="홈으로">‹</button><h2>업데이트 내역</h2></div>
+      <div class="col" id="logList"></div>
     </div>
     <div class="scr" id="scrSet" hidden>
       <div class="head"><button class="back" id="backSet" type="button" aria-label="홈으로">‹</button><h2>설정</h2></div>
@@ -487,10 +498,13 @@ function sunHazards(p, b){
 Object.assign(ATTACKS, {
   rays: {dur:3.4, run(b, t, st){        // 햇살 부채꼴
     every(st, 'k', 0.5, t, 6, i => {
-      const pa = Math.atan2(player.y - b.y, player.x - b.x), n = D.count > 1 ? 10 : 7;
+      // 태양풍 중에는 태양 바로 앞에서 피해야 하므로, 한 번 걸러 한 번만 느린 탄 3발로 줄인다
+      const near = !!b.wind;
+      if (near && i % 2) return;
+      const pa = Math.atan2(player.y - b.y, player.x - b.x), n = near ? 3 : D.count > 1 ? 10 : 7;
       for (const off of (i % 2 ? [-0.55, 0.55] : [0])){
         const s0 = sunSurf(b, pa + off), a = Math.atan2(player.y - s0.y, player.x - s0.x);
-        for (let k = 0; k < n; k++) shoot(s0.x, s0.y, a + (k / (n - 1) - 0.5) * 1.15, 205, i % 2 ? SPR.org : SPR.yel, 7);
+        for (let k = 0; k < n; k++) shoot(s0.x, s0.y, a + (k / (n - 1) - 0.5) * (near ? 0.7 : 1.15), near ? 140 : 205, i % 2 ? SPR.org : SPR.yel, 7);
       }
       beep(260, 0.1, 'triangle', 0.04);
     });
@@ -1754,10 +1768,50 @@ function buildRoom(){
 let scr = 'Home';
 function show(name){
   scr = name;
-  for (const n of ['Home','Stage','Diff','Weap','Skin','Rank','Duel','Room','Set']) $('scr' + n).hidden = n !== name;
-  ({Home:buildHome, Stage:buildStages, Diff:buildDiffs, Weap:buildWeap, Skin:buildSkins, Rank:buildRank, Duel:buildDuel, Room:buildRoom, Set:buildSet})[name]();
+  for (const n of ['Home','Stage','Diff','Weap','Skin','Rank','Duel','Room','Log','Set']) $('scr' + n).hidden = n !== name;
+  ({Home:buildHome, Stage:buildStages, Diff:buildDiffs, Weap:buildWeap, Skin:buildSkins, Rank:buildRank, Duel:buildDuel, Room:buildRoom, Log:buildLog, Set:buildSet})[name]();
+}
+// 업데이트 내역: 새 버전은 맨 위에 추가한다
+const UPDATES = [
+  {v:'1.6', date:'2026-11-14', title:'솔라 크라운', notes:[
+    '세 번째 보스 「솔라 크라운」 추가. 화면 위쪽을 채우는 거대한 태양이에요.',
+    '코로나 폭발은 멀리, 태양풍은 가까이 붙어야 피할 수 있어요.',
+    '넓은 화면에서 위아래가 짧던 전장을 길게 고쳤어요.',
+    '솔라 크라운 난이도를 조정하고, 태양풍 중에 나오는 탄을 줄였어요.']},
+  {v:'1.5', date:'2026-11-14', title:'스치기 게이지', notes:[
+    '탄을 아슬아슬하게 스치면 게이지가 차서 공격이 최대 1.5배까지 세져요.',
+    '맞으면 게이지가 크게 깎이고, 판이 끝나면 사라져요.']},
+  {v:'1.4', date:'2026-11-14', title:'실시간 1대1 대결', notes:[
+    '방을 만들거나 4자리 코드로 들어가 친구와 같은 보스를 동시에 잡아요.',
+    '먼저 깬 사람이 이기고, 둘 다 쓰러지면 보스 체력을 더 많이 깎은 사람이 이겨요.']},
+  {v:'1.3', date:'2026-11-14', title:'순위표와 로그인', notes:[
+    '보스와 난이도마다 빨리 깬 순서로 순위표가 생겼어요.',
+    '익명으로 바로 시작하고, 설정에서 구글 로그인과 닉네임을 정할 수 있어요.']},
+  {v:'1.2', date:'2026-11-14', title:'무기와 교체 스킬', notes:[
+    '무기 4종(펄스, 스캐터, 오브, 랜스) 중 3개를 골라 들어요.',
+    '무기를 바꿔 들면 그 무기의 스킬이 나가요. 스킬마다 6초를 기다려야 해요.',
+    '무기가 세진 만큼 보스 체력을 1.5배로 올렸어요.']},
+  {v:'1.1', date:'2026-11-13', title:'트윈 노바와 새 홈 화면', notes:[
+    '두 번째 보스 「트윈 노바」 추가.',
+    '홈 화면, 스테이지 선택, 스킨 6종, 설정이 생겼어요.',
+    '화면을 더 네온답게 꾸미고, 일시정지와 대시 표시를 넣었어요.',
+    '공격이 자동으로 나가게 바꿨어요.']},
+  {v:'1.0', date:'2026-11-13', title:'첫 버전', notes:[
+    '보스 「프리즘 코어」와 난이도 4개(쉬움, 보통, 어려움, 지옥)로 시작했어요.']},
+];
+function buildLog(){
+  const box = $('logList');
+  box.innerHTML = '';
+  UPDATES.forEach((u, i) => {
+    const d = mk('div', 'log' + (i ? '' : ' new')), h = mk('h3'), l = mk('span');
+    l.appendChild(mk('em', '', 'v' + u.v + ' ')); l.appendChild(document.createTextNode ? document.createTextNode(u.title) : mk('span', '', u.title));
+    h.appendChild(l); h.appendChild(mk('small', '', u.date));
+    const ul = mk('ul'); u.notes.forEach(n => ul.appendChild(mk('li', '', n)));
+    d.appendChild(h); d.appendChild(ul); box.appendChild(d);
+  });
 }
 function buildHome(){
+  $('goLog').textContent = '업데이트 내역 · v' + UPDATES[0].v;
   $('stageNow').textContent = '보스 ' + BOSSES.length + '종';
   $('skinNow').textContent = curSkin().name;
   $('weapNow').textContent = getLO().map(w => w.name).join(' · ');
@@ -1865,6 +1919,8 @@ $('backWeap').addEventListener('click', () => show('Home'));
 $('goSet').addEventListener('click', () => { net.msg = ''; show('Set'); });
 $('goRank').addEventListener('click', () => { rankBoss = selBoss; show('Rank'); });
 $('backRank').addEventListener('click', () => show('Home'));
+$('goLog').addEventListener('click', () => show('Log'));
+$('backLog').addEventListener('click', () => show('Home'));
 $('goDuel').addEventListener('click', () => { duel.msg = ''; show('Duel'); });
 $('backDuel').addEventListener('click', () => show('Home'));
 $('mkRoom').addEventListener('click', createRoom);
