@@ -1460,7 +1460,7 @@ async function submitScore(bd, d, t, grade, loadout){
   const F = net.F, id = boardId(bd, d), ref = F.doc(net.db, 'boards', id, 'entries', net.user.uid);
   const tt = Math.round(t * 100) / 100, old = await F.getDoc(ref);
   let best = tt;
-  if (!old.exists() || tt < old.data().time) await F.setDoc(ref, {name:myName(), time:tt, grade, loadout, ts:F.serverTimestamp()});
+  if (!old.exists() || tt < old.data().time) await F.setDoc(ref, {name:myName(), time:tt, grade, loadout, ver:UPDATES[0].v, ts:F.serverTimestamp()});
   else best = old.data().time;
   const c = await F.getCountFromServer(F.query(F.collection(net.db, 'boards', id, 'entries'), F.where('time', '<', best)));
   return {rank:c.data().count + 1, best, isNew:best === tt};
@@ -1477,7 +1477,7 @@ function rankRow(no, e, me){
   row.appendChild(mk('span', 'no', String(no)));
   const nm = mk('span', 'nm'); nm.appendChild(mk('b', '', String(e.name || '익명').slice(0, 10)));
   const lo = (Array.isArray(e.loadout) ? e.loadout : []).map(id => (WEAPONS.find(w => w.id === id) || {}).name).filter(Boolean).join(' · ');
-  nm.appendChild(mk('small', '', (e.grade ? e.grade + '등급' : '') + (lo ? ' · ' + lo : '')));
+  nm.appendChild(mk('small', '', (e.grade ? e.grade + '등급' : '') + (lo ? ' · ' + lo : '') + (typeof e.ver === 'string' && e.ver ? ' · v' + e.ver.slice(0, 8) : '')));
   row.appendChild(nm); row.appendChild(mk('span', 'tm', fmt2(+e.time || 0)));
   return row;
 }
@@ -1773,6 +1773,9 @@ function show(name){
 }
 // 업데이트 내역: 새 버전은 맨 위에 추가한다
 const UPDATES = [
+  {v:'1.7', date:'2026-11-14', title:'기록에 버전 표시', notes:[
+    '순위표 기록에 어떤 버전에서 깼는지 같이 보여요. 이 버전 전에 올린 기록에는 버전이 없어요.',
+    '업데이트 내역 화면이 생겼어요.']},
   {v:'1.6', date:'2026-11-14', title:'솔라 크라운', notes:[
     '세 번째 보스 「솔라 크라운」 추가. 화면 위쪽을 채우는 거대한 태양이에요.',
     '코로나 폭발은 멀리, 태양풍은 가까이 붙어야 피할 수 있어요.',
